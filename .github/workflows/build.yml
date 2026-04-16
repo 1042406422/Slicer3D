@@ -9,55 +9,28 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        slicer-version: ['5.6.2', '5.8.1', '5.10.0']
+    runs-on: ubuntu-latest
+    container:
+      image: slicer/slicer-base:latest
+      options: --user root
     
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-
-    - name: Cache Slicer
-      id: cache-slicer
-      uses: actions/cache@v4
-      with:
-        path: C:\Slicer
-        key: ${{ runner.os }}-slicer-${{ matrix.slicer-version }}
-
-    - name: Download Slicer
-      if: steps.cache-slicer.outputs.cache-hit != 'true'
+    - name: Build Extension
       run: |
-        $slicerUrl = "https://download.slicer.org/bitstream/648d4f7cd96a4f23a0f4c8a0"
-        if ("${{ matrix.slicer-version }}" -eq "5.6.2") {
-          $slicerUrl = "https://download.slicer.org/bitstream/63f9e3b3d96a4f23a0f4a3e0"
-        } elseif ("${{ matrix.slicer-version }}" -eq "5.8.1") {
-          $slicerUrl = "https://download.slicer.org/bitstream/65f5f5e8d96a4f23a0f5a3e0"
-        } elseif ("${{ matrix.slicer-version }}" -eq "5.10.0") {
-          $slicerUrl = "https://download.slicer.org/bitstream/648d4f7cd96a4f23a0f4c8a0"
-        }
-        Write-Host "Downloading Slicer ${{ matrix.slicer-version }}..."
-        Invoke-WebRequest -Uri $slicerUrl -OutFile "C:\Slicer.zip"
-        Expand-Archive -Path "C:\Slicer.zip" -DestinationPath "C:\Slicer" -Force
-        Remove-Item "C:\Slicer.zip"
-
-    - name: Configure
-      run: |
-        $slicerDir = Get-ChildItem "C:\Slicer\Slicer*" -Directory | Select-Object -First 1
-        Write-Host "Slicer directory: $slicerDir"
         mkdir build
         cd build
-        cmake -G "Visual Studio 17 2022" -A x64 `
-          -DSlicer_DIR:PATH="$slicerDir\lib\Slicer-5.10" `
-          -DCMAKE_BUILD_TYPE:STRING=Release `
-          -DSlicer3D_SUPERBUILD:BOOL=OFF `
+        
+        # Configure with Slicer from the container
+        cmake \
+          -DCMAKE_BUILD_TYPE:STRING=Release \
+          -DSlicer3D_SUPERBUILD:BOOL=OFF \
+          -DSlicerVirtualReality_HAS_OPENVR_SUPPORT:BOOL=OFF \
+          -DSlicerVirtualReality_HAS_OPENXR_SUPPORT:BOOL=OFF \
+          -DSlicerVirtualReality_HAS_OPENXRREMOTING_SUPPORT:BOOL=OFF \
           ..
-
-    - name: Build
-      run: |
-        cd build
+        
         cmake --build . --config Release --parallel 4
 
     - name: Package
@@ -68,5 +41,86 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Slicer3D-Slicer-${{ matrix.slicer-version }}
+        name: Slicer3D-Linux
+        path: build/_CPack_Packages/**/*.tar.gz
+        if-no-files-found: warn
+
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Install Slicer
+      run: |
+        Write-Host "Installing Slicer 5.10.0..."
+        
+        # Download Slicer
+        $slicerUrl = "https://download.slicer.org/find?os=windows&arch=amd64&stability=release"
+        try {
+          $response = Invoke-WebRequest -Uri $slicerUrl -UseBasicParsing
+          $json = $response.Content | ConvertFrom-Json
+          $downloadUrl = $json.items[0].url
+          Write-Host "Download URL: $downloadUrl"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile "C:\Slicer.exe"
+        } catch {
+          Write-Host "Error downloading Slicer: $_"
+          # Fallback to direct URL
+          $directUrl = "https://github.com/Slicer/Slicer/releases/download/v5.10.0/Slicer-5.10.0-win-amd64.exe"
+          Invoke-WebRequest -Uri $directUrl -OutFile "C:\Slicer.exe"
+        }
+        
+        # Install Slicer silently
+        Start-Process -FilePath "C:\Slicer.exe" -ArgumentList "/S", "/D=C:\Slicer" -Wait
+        
+        # List installed files
+        Get-ChildItem "C:\Slicer" -ErrorAction SilentlyContinue
+
+    - name: Build Extension
+      run: |
+        # Find Slicer installation
+        $slicerDir = "C:\Slicer"
+        if (-not (Test-Path $slicerDir)) {
+          $slicerDir = Get-ChildItem "C:\Program Files" -Filter "Slicer*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        }
+        if (-not $slicerDir) {
+          $slicerDir = "${env:LOCALAPPDATA}\slicer.org"
+          $slicerDir = Get-ChildItem $slicerDir -Directory -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        }
+        
+        Write-Host "Slicer directory: $slicerDir"
+        Get-ChildItem "$slicerDir\lib" -Directory -ErrorAction SilentlyContinue
+        
+        mkdir build
+        cd build
+        
+        cmake -G "Visual Studio 17 2022" -A x64 `
+          -DSlicer_DIR:PATH="$slicerDir\lib\Slicer-5.10" `
+          -DCMAKE_BUILD_TYPE:STRING=Release `
+          -DSlicer3D_SUPERBUILD:BOOL=OFF `
+          -DSlicerVirtualReality_HAS_OPENVR_SUPPORT:BOOL=OFF `
+          -DSlicerVirtualReality_HAS_OPENXR_SUPPORT:BOOL=OFF `
+          -DSlicerVirtualReality_HAS_OPENXRREMOTING_SUPPORT:BOOL=OFF `
+          ..
+        
+        cmake --build . --config Release --parallel 4
+
+    - name: Package
+      run: |
+        cd build
+        cpack -C Release
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Slicer3D-Windows
         path: build/_CPack_Packages/**/*.zip
+        if-no-files-found: warn
