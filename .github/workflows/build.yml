@@ -8,61 +8,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake g++ git
-
-    - name: Cache Slicer Build
-      id: cache-slicer
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/Slicer-SuperBuild
-          ~/Slicer-Build
-        key: ${{ runner.os }}-slicer-5.10.0-v1
-
-    - name: Download and Build Slicer
-      if: steps.cache-slicer.outputs.cache-hit != 'true'
-      run: |
-        git clone --branch v5.10.0 --depth 1 https://github.com/Slicer/Slicer.git ~/Slicer-SuperBuild
-        mkdir ~/Slicer-Build
-        cd ~/Slicer-Build
-        cmake ~/Slicer-SuperBuild -DCMAKE_BUILD_TYPE=Release
-        cmake --build . --target Slicer --parallel 4
-
-    - name: Build Extension
-      run: |
-        mkdir build
-        cd build
-        cmake \
-          -DSlicer_DIR:PATH=$HOME/Slicer-Build/Slicer-build \
-          -DCMAKE_BUILD_TYPE:STRING=Release \
-          -DSlicer3D_SUPERBUILD:BOOL=OFF \
-          -DSlicerVirtualReality_HAS_OPENVR_SUPPORT:BOOL=OFF \
-          -DSlicerVirtualReality_HAS_OPENXR_SUPPORT:BOOL=OFF \
-          -DSlicerVirtualReality_HAS_OPENXRREMOTING_SUPPORT:BOOL=OFF \
-          ..
-        cmake --build . --config Release --parallel 4
-
-    - name: Package
-      run: |
-        cd build
-        cpack -C Release
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Slicer3D-Linux
-        path: build/_CPack_Packages/**/*.tar.gz
-        if-no-files-found: warn
-
   build-windows:
     runs-on: windows-latest
     
@@ -72,6 +17,15 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
+    - name: Install Qt5
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '5.15.2'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2019_64'
+        modules: 'qtcharts qtdatavis3d qtnetworkauth qtpurchasing qtvirtualkeyboard qtwebengine qtwebglplugin'
+
     - name: Cache Slicer Build
       id: cache-slicer
       uses: actions/cache@v4
@@ -79,7 +33,7 @@ jobs:
         path: |
           C:\Slicer-SuperBuild
           C:\Slicer-Build
-        key: ${{ runner.os }}-slicer-5.10.0-v1
+        key: ${{ runner.os }}-slicer-5.10.0-qt5-v1
 
     - name: Download and Build Slicer
       if: steps.cache-slicer.outputs.cache-hit != 'true'
@@ -87,7 +41,9 @@ jobs:
         git clone --branch v5.10.0 --depth 1 https://github.com/Slicer/Slicer.git C:\Slicer-SuperBuild
         mkdir C:\Slicer-Build
         cd C:\Slicer-Build
-        cmake C:\Slicer-SuperBuild -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+        cmake C:\Slicer-SuperBuild -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DQt5_DIR="${{ env.Qt5_DIR }}"
         cmake --build . --target Slicer --config Release --parallel 4
 
     - name: Build Extension
