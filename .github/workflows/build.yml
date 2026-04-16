@@ -22,7 +22,6 @@ jobs:
         mkdir build
         cd build
         
-        # Configure with Slicer from the container
         cmake \
           -DCMAKE_BUILD_TYPE:STRING=Release \
           -DSlicer3D_SUPERBUILD:BOOL=OFF \
@@ -54,48 +53,26 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-
-    - name: Install Slicer
+    - name: Install Slicer 5.10.0
       run: |
-        Write-Host "Installing Slicer 5.10.0..."
-        
-        # Download Slicer
-        $slicerUrl = "https://download.slicer.org/find?os=windows&arch=amd64&stability=release"
+        Write-Host "Downloading Slicer 5.10.0..."
+        $url = "https://download.slicer.org/find?os=windows&arch=amd64&stability=release"
         try {
-          $response = Invoke-WebRequest -Uri $slicerUrl -UseBasicParsing
+          $response = Invoke-WebRequest -Uri $url -UseBasicParsing
           $json = $response.Content | ConvertFrom-Json
           $downloadUrl = $json.items[0].url
           Write-Host "Download URL: $downloadUrl"
           Invoke-WebRequest -Uri $downloadUrl -OutFile "C:\Slicer.exe"
         } catch {
-          Write-Host "Error downloading Slicer: $_"
-          # Fallback to direct URL
           $directUrl = "https://github.com/Slicer/Slicer/releases/download/v5.10.0/Slicer-5.10.0-win-amd64.exe"
           Invoke-WebRequest -Uri $directUrl -OutFile "C:\Slicer.exe"
         }
-        
-        # Install Slicer silently
         Start-Process -FilePath "C:\Slicer.exe" -ArgumentList "/S", "/D=C:\Slicer" -Wait
-        
-        # List installed files
         Get-ChildItem "C:\Slicer" -ErrorAction SilentlyContinue
 
     - name: Build Extension
       run: |
-        # Find Slicer installation
         $slicerDir = "C:\Slicer"
-        if (-not (Test-Path $slicerDir)) {
-          $slicerDir = Get-ChildItem "C:\Program Files" -Filter "Slicer*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-        }
-        if (-not $slicerDir) {
-          $slicerDir = "${env:LOCALAPPDATA}\slicer.org"
-          $slicerDir = Get-ChildItem $slicerDir -Directory -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-        }
-        
         Write-Host "Slicer directory: $slicerDir"
         Get-ChildItem "$slicerDir\lib" -Directory -ErrorAction SilentlyContinue
         
