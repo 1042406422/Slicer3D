@@ -1,0 +1,72 @@
+name: Build Slicer3D Extension
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        slicer-version: ['5.6.2', '5.8.1', '5.10.0']
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Cache Slicer
+      id: cache-slicer
+      uses: actions/cache@v4
+      with:
+        path: C:\Slicer
+        key: ${{ runner.os }}-slicer-${{ matrix.slicer-version }}
+
+    - name: Download Slicer
+      if: steps.cache-slicer.outputs.cache-hit != 'true'
+      run: |
+        $slicerUrl = "https://download.slicer.org/bitstream/648d4f7cd96a4f23a0f4c8a0"
+        if ("${{ matrix.slicer-version }}" -eq "5.6.2") {
+          $slicerUrl = "https://download.slicer.org/bitstream/63f9e3b3d96a4f23a0f4a3e0"
+        } elseif ("${{ matrix.slicer-version }}" -eq "5.8.1") {
+          $slicerUrl = "https://download.slicer.org/bitstream/65f5f5e8d96a4f23a0f5a3e0"
+        } elseif ("${{ matrix.slicer-version }}" -eq "5.10.0") {
+          $slicerUrl = "https://download.slicer.org/bitstream/648d4f7cd96a4f23a0f4c8a0"
+        }
+        Write-Host "Downloading Slicer ${{ matrix.slicer-version }}..."
+        Invoke-WebRequest -Uri $slicerUrl -OutFile "C:\Slicer.zip"
+        Expand-Archive -Path "C:\Slicer.zip" -DestinationPath "C:\Slicer" -Force
+        Remove-Item "C:\Slicer.zip"
+
+    - name: Configure
+      run: |
+        $slicerDir = Get-ChildItem "C:\Slicer\Slicer*" -Directory | Select-Object -First 1
+        Write-Host "Slicer directory: $slicerDir"
+        mkdir build
+        cd build
+        cmake -G "Visual Studio 17 2022" -A x64 `
+          -DSlicer_DIR:PATH="$slicerDir\lib\Slicer-5.10" `
+          -DCMAKE_BUILD_TYPE:STRING=Release `
+          -DSlicer3D_SUPERBUILD:BOOL=OFF `
+          ..
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config Release --parallel 4
+
+    - name: Package
+      run: |
+        cd build
+        cpack -C Release
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Slicer3D-Slicer-${{ matrix.slicer-version }}
+        path: build/_CPack_Packages/**/*.zip
