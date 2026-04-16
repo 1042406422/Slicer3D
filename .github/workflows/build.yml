@@ -8,28 +8,47 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest
-    container:
-      image: slicer/slicer-base:latest
-      options: --user root
     
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake g++ git
+
+    - name: Cache Slicer Build
+      id: cache-slicer
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/Slicer-SuperBuild
+          ~/Slicer-Build
+        key: ${{ runner.os }}-slicer-5.10.0-v1
+
+    - name: Download and Build Slicer
+      if: steps.cache-slicer.outputs.cache-hit != 'true'
+      run: |
+        git clone --branch v5.10.0 --depth 1 https://github.com/Slicer/Slicer.git ~/Slicer-SuperBuild
+        mkdir ~/Slicer-Build
+        cd ~/Slicer-Build
+        cmake ~/Slicer-SuperBuild -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --target Slicer --parallel 4
 
     - name: Build Extension
       run: |
         mkdir build
         cd build
-        
         cmake \
+          -DSlicer_DIR:PATH=$HOME/Slicer-Build/Slicer-build \
           -DCMAKE_BUILD_TYPE:STRING=Release \
           -DSlicer3D_SUPERBUILD:BOOL=OFF \
           -DSlicerVirtualReality_HAS_OPENVR_SUPPORT:BOOL=OFF \
           -DSlicerVirtualReality_HAS_OPENXR_SUPPORT:BOOL=OFF \
           -DSlicerVirtualReality_HAS_OPENXRREMOTING_SUPPORT:BOOL=OFF \
           ..
-        
         cmake --build . --config Release --parallel 4
 
     - name: Package
@@ -53,41 +72,36 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Install Slicer 5.10.0
+    - name: Cache Slicer Build
+      id: cache-slicer
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Slicer-SuperBuild
+          C:\Slicer-Build
+        key: ${{ runner.os }}-slicer-5.10.0-v1
+
+    - name: Download and Build Slicer
+      if: steps.cache-slicer.outputs.cache-hit != 'true'
       run: |
-        Write-Host "Downloading Slicer 5.10.0..."
-        $url = "https://download.slicer.org/find?os=windows&arch=amd64&stability=release"
-        try {
-          $response = Invoke-WebRequest -Uri $url -UseBasicParsing
-          $json = $response.Content | ConvertFrom-Json
-          $downloadUrl = $json.items[0].url
-          Write-Host "Download URL: $downloadUrl"
-          Invoke-WebRequest -Uri $downloadUrl -OutFile "C:\Slicer.exe"
-        } catch {
-          $directUrl = "https://github.com/Slicer/Slicer/releases/download/v5.10.0/Slicer-5.10.0-win-amd64.exe"
-          Invoke-WebRequest -Uri $directUrl -OutFile "C:\Slicer.exe"
-        }
-        Start-Process -FilePath "C:\Slicer.exe" -ArgumentList "/S", "/D=C:\Slicer" -Wait
-        Get-ChildItem "C:\Slicer" -ErrorAction SilentlyContinue
+        git clone --branch v5.10.0 --depth 1 https://github.com/Slicer/Slicer.git C:\Slicer-SuperBuild
+        mkdir C:\Slicer-Build
+        cd C:\Slicer-Build
+        cmake C:\Slicer-SuperBuild -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --target Slicer --config Release --parallel 4
 
     - name: Build Extension
       run: |
-        $slicerDir = "C:\Slicer"
-        Write-Host "Slicer directory: $slicerDir"
-        Get-ChildItem "$slicerDir\lib" -Directory -ErrorAction SilentlyContinue
-        
         mkdir build
         cd build
-        
         cmake -G "Visual Studio 17 2022" -A x64 `
-          -DSlicer_DIR:PATH="$slicerDir\lib\Slicer-5.10" `
+          -DSlicer_DIR:PATH="C:\Slicer-Build\Slicer-build" `
           -DCMAKE_BUILD_TYPE:STRING=Release `
           -DSlicer3D_SUPERBUILD:BOOL=OFF `
           -DSlicerVirtualReality_HAS_OPENVR_SUPPORT:BOOL=OFF `
           -DSlicerVirtualReality_HAS_OPENXR_SUPPORT:BOOL=OFF `
           -DSlicerVirtualReality_HAS_OPENXRREMOTING_SUPPORT:BOOL=OFF `
           ..
-        
         cmake --build . --config Release --parallel 4
 
     - name: Package
