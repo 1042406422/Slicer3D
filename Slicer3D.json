@@ -1,0 +1,15 @@
+{
+  "scm": "git",
+  "scmurl": "git+https://github.com/1042406422/Slicer3D.git",
+  "scmrevision": "main",
+  "name": "Slicer3D",
+  "description": "Dual projection stereo 3D display for medical imaging. Supports polarized projection systems with separate left/right eye rendering.",
+  "category": "Stereo Display",
+  "homepage": "https://github.com/1042406422/Slicer3D",
+  "contributors": "Jean-Baptiste Vimort (Kitware), Jean-Christophe Fillion-Robin (Kitware), Csaba Pinter (PerkLab, Queen's University), Adam Rankin (VASST Lab, Robarts Research Institute, Western University)",
+  "status": "experimental",
+  "enabled": 1,
+  "build_subdirectory": ".",
+  "dependencies": [],
+  "build": "true"
+}
